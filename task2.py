@@ -1,4 +1,4 @@
-import cv2
+    import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage import io
@@ -63,7 +63,7 @@ def optimized_count_plants(image_path):
 
 
 # Example usage
-image_path = r"C:\Users\kathit\Downloads\Count1.tif"  # Ensure correct file path format
+image_path = r"https://raw.githubusercontent.com/kathitdesai/Geospatial-Data/main/Count1.jpeg"  # Ensure correct file path format
 plant_count = optimized_count_plants(image_path)
 if plant_count is not None:
     print(f"Total plant count: {plant_count}")
