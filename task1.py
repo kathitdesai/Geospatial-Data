@@ -1,93 +1,96 @@
-from google.colab import drive
-import zipfile
 import os
+import io
+import zipfile
+import requests
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+from google.colab import drive
 
-# Step 1: Mount Google Drive
+# Dataset URLs
+dataset_urls = [
+    # "https://data.pix4d.com/misc/example_datasets/example_Island_Dominica_2017_Hurricane.zip",
+    "https://data.pix4d.com/misc/example_datasets/Pix4Dmatic_example_1469_images.zip",
+    # "https://data.pix4d.com/misc/example_datasets/example_belleview.zip"
+]
+
+# Step 1: Mount Google Drive for saving results
 drive.mount('/content/drive')
 
-# Define paths (Upload ZIP to Google Drive first)
-zip_path = "/content/drive/My Drive/example_Island_Dominica_2017_Hurricane.zip"  # Change this if needed
-extract_path = "extracted_data"
-
-# Step 2: Extract the ZIP file
-with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-    zip_ref.extractall(extract_path)
-
-# Step 3: Debugging - List all extracted files
-print("Extracted files and directories:", os.listdir(extract_path))
-
-# Step 4: Find all images inside extracted folder, including subdirectories
-image_extensions = ('.jpg', '.png', '.jpeg', '.tif', '.tiff')
-image_files = []
-
-for root, _, files in os.walk(extract_path):
-    for file in files:
-        if file.lower().endswith(image_extensions):
-            image_files.append(os.path.join(root, file))
-
-# Step 5: Check if images were found
-if not image_files:
-    raise ValueError("No image files found in the dataset!")
-
-# Step 6: Load the first image for analysis
-sample_img_path = image_files[0]
-print(f"Processing Image: {sample_img_path}")
-
-image = cv2.imread(sample_img_path)
-image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
-image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)  # Convert BGR to HSV
-
-# Step 7: Define HSV color range for classification
-# Vegetation (Green Areas)
-lower_vegetation = np.array([25, 40, 40])
-upper_vegetation = np.array([90, 255, 255])
-
-# Water (Blue Areas)
-lower_water = np.array([90, 50, 50])
-upper_water = np.array([140, 255, 255])
-
-# Step 8: Create masks
-vegetation_mask = cv2.inRange(image_hsv, lower_vegetation, upper_vegetation)
-water_mask = cv2.inRange(image_hsv, lower_water, upper_water)
-
-# Land (everything except vegetation & water)
-land_mask = cv2.bitwise_not(cv2.bitwise_or(vegetation_mask, water_mask))
-
-# Step 9: Apply masks to segment images
-vegetation_segment = cv2.bitwise_and(image_rgb, image_rgb, mask=vegetation_mask)
-water_segment = cv2.bitwise_and(image_rgb, image_rgb, mask=water_mask)
-land_segment = cv2.bitwise_and(image_rgb, image_rgb, mask=land_mask)
-
-# Step 10: Display results
-fig, axes = plt.subplots(1, 4, figsize=(20, 5))
-
-axes[0].imshow(image_rgb)
-axes[0].set_title("Original Image")
-axes[0].axis("off")
-
-axes[1].imshow(vegetation_segment)
-axes[1].set_title("Vegetation Detection")
-axes[1].axis("off")
-
-axes[2].imshow(water_segment)
-axes[2].set_title("Water Detection")
-axes[2].axis("off")
-
-axes[3].imshow(land_segment)
-axes[3].set_title("Land Detection")
-axes[3].axis("off")
-
-plt.show()
-
-# Step 11: Save segmented images to Google Drive
+# Google Drive output folder
 cloud_path = "/content/drive/My Drive/segmented_images/"
 os.makedirs(cloud_path, exist_ok=True)
 
-cv2.imwrite(os.path.join(cloud_path, "vegetation.png"), vegetation_segment)
-cv2.imwrite(os.path.join(cloud_path, "water.png"), water_segment)
-cv2.imwrite(os.path.join(cloud_path, "land.png"), land_segment)
+for dataset_url in dataset_urls:
+    dataset_name = os.path.splitext(os.path.basename(dataset_url))[0]
+    dataset_extract_path = f"extracted_data/{dataset_name}"
+    os.makedirs(dataset_extract_path, exist_ok=True)
 
-print(f"Images saved to {cloud_path}")
+    # Download and extract dataset
+    response = requests.get(dataset_url, stream=True)
+    if response.status_code == 200:
+        print(f"Downloading {dataset_name} dataset... This may take a while.")
+        with zipfile.ZipFile(io.BytesIO(response.content), "r") as zip_ref:
+            zip_ref.extractall(dataset_extract_path)
+        print(f"Dataset {dataset_name} extracted successfully!")
+    else:
+        print(f"Failed to download {dataset_name} dataset. Status code: {response.status_code}")
+        continue
+
+    # Debugging - List extracted files
+    print(f"Extracted files in {dataset_name}:", os.listdir(dataset_extract_path))
+
+    # Step 2: Find all images inside extracted folder, including subdirectories
+    image_extensions = ('.jpg', '.png', '.jpeg', '.tif', '.tiff')
+    image_files = []
+    for root, _, files in os.walk(dataset_extract_path):
+        for file in files:
+            if file.lower().endswith(image_extensions):
+                image_files.append(os.path.join(root, file))
+
+    # Step 3: Check if images were found
+    if not image_files:
+        print(f"No image files found in {dataset_name} dataset!")
+        continue
+
+    # Create dataset output folder in Google Drive
+    dataset_folder = os.path.join(cloud_path, dataset_name)
+    os.makedirs(dataset_folder, exist_ok=True)
+
+    # Step 4: Process and save each image
+    for img_path in image_files:
+        print(f"Processing Image: {img_path}")
+        
+        image = cv2.imread(img_path)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
+        image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)  # Convert BGR to HSV
+
+        # Define HSV color range for classification
+        lower_vegetation = np.array([25, 40, 40])
+        upper_vegetation = np.array([90, 255, 255])
+        lower_water = np.array([90, 50, 50])
+        upper_water = np.array([140, 255, 255])
+
+        # Create masks
+        vegetation_mask = cv2.inRange(image_hsv, lower_vegetation, upper_vegetation)
+        water_mask = cv2.inRange(image_hsv, lower_water, upper_water)
+        land_mask = cv2.bitwise_not(cv2.bitwise_or(vegetation_mask, water_mask))
+
+        # Apply masks to segment images
+        vegetation_segment = cv2.bitwise_and(image_rgb, image_rgb, mask=vegetation_mask)
+        water_segment = cv2.bitwise_and(image_rgb, image_rgb, mask=water_mask)
+        land_segment = cv2.bitwise_and(image_rgb, image_rgb, mask=land_mask)
+
+        # Create subfolders for each image
+        img_name = os.path.splitext(os.path.basename(img_path))[0]
+        img_folder = os.path.join(dataset_folder, img_name)
+        os.makedirs(img_folder, exist_ok=True)
+
+        # Save segmented images
+        cv2.imwrite(os.path.join(img_folder, "vegetation.png"), vegetation_segment)
+        cv2.imwrite(os.path.join(img_folder, "water.png"), water_segment)
+        cv2.imwrite(os.path.join(img_folder, "land.png"), land_segment)
+
+        print(f"Segmented images saved to {img_folder}")
+
+print(f"All processed images saved to {cloud_path}")
